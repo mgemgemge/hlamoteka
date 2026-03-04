@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ValueIt Scanner</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { 
+            background-color: var(--tg-theme-bg-color, #ffffff); 
+            color: var(--tg-theme-text-color, #000000); 
+            font-family: sans-serif; 
+            text-align: center; 
+            padding: 20px; 
+            margin: 0; 
+        }
+        h1 { font-size: 24px; margin-bottom: 5px; }
+        p { color: var(--tg-theme-hint-color, #888888); margin-bottom: 30px; font-size: 14px; }
+        input[type="file"] { display: none; }
+        .camera-btn { 
+            background-color: var(--tg-theme-button-color, #2481cc); 
+            color: var(--tg-theme-button-text-color, #ffffff); 
+            padding: 15px 20px; 
+            border-radius: 12px; 
+            font-size: 18px; 
+            font-weight: bold; 
+            display: inline-block; 
+            width: 80%; 
+            cursor: pointer; 
+        }
+        #imagePreview { 
+            margin-top: 30px; 
+            max-width: 100%; 
+            border-radius: 12px; 
+            display: none; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ValueIt AI 🤖</h1>
+    <p>Сделайте четкое фото устройства при хорошем освещении</p>
+
+    <label class="camera-btn">
+        📸 Включить камеру
+        <input type="file" id="cameraInput" accept="image/*" capture="environment">
+    </label>
+
+    <img id="imagePreview" alt="Предпросмотр фото">
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const cameraInput = document.getElementById('cameraInput');
+        const imagePreview = document.getElementById('imagePreview');
+
+        // Когда юзер сделал фото
+        cameraInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    tg.MainButton.text = "ОТПРАВИТЬ НА ОЦЕНКУ";
+                    tg.MainButton.color = "#31b545"; // Зеленый цвет
+                    tg.MainButton.show();
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // БОЕВАЯ ЛОГИКА ОТПРАВКИ ФОТО НА СЕРВЕР
+        tg.MainButton.onClick(async function() {
+            const file = cameraInput.files[0];
+            const user = tg.initDataUnsafe?.user; 
+            
+            if (!file) {
+                tg.showAlert("Сделайте фото!");
+                return;
+            }
+
+            // Меняем кнопку на загрузку
+            tg.MainButton.text = "ОТПРАВЛЯЕМ... ⏳";
+            tg.MainButton.showProgress();
+
+            const formData = new FormData();
+            formData.append('file', file);
+            // Берем ID юзера из Телеграма. Если открыли в браузере - ставим заглушку 123456789
+            formData.append('user_id', user ? user.id : 123456789); 
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    headers: {
+                        // Этот заголовок заставляет Ngrok пропустить запрос без экрана с кнопкой "Visit site"
+                        'ngrok-skip-browser-warning': 'true' 
+                    },
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    // Если всё супер - закрываем Web App!
+                    tg.close(); 
+                } else {
+                    // Если сервер ответил, но с ошибкой
+                    tg.showAlert("Сервер ругается. Код ошибки: " + response.status);
+                    tg.MainButton.hideProgress();
+                    tg.MainButton.text = "ОТПРАВИТЬ НА ОЦЕНКУ";
+                }
+            } catch (err) {
+                // Если CORS заблокировал запрос или пропал интернет
+                tg.showAlert("Связь оборвалась: " + err.message);
+                tg.MainButton.hideProgress();
+                tg.MainButton.text = "ОТПРАВИТЬ НА ОЦЕНКУ";
+            }
+        });
+    </script>
+</body>
+</html>
