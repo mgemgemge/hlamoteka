@@ -27,7 +27,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Ссылку на Web App теперь тоже берем из настроек. 
 # Заглушка стоит на случай, если ты еще не прописал её в .env
-WEB_APP_URL = "https://mgemgemge.github.io/hlamoteka/"
+WEB_APP_URL = "https://mgemgemge.github.io/hlamoteka/?v=2"
 # Инициализация
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
@@ -194,3 +194,4 @@ if __name__ == "__main__":
     print("🚀 Стартуем гибридный сервер (API + Bot) на порту 8000...")
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
