@@ -1,0 +1,7 @@
+aiogram==3.4.1
+google-generativeai
+pillow
+fastapi
+uvicorn
+python-multipart
+python-dotenv
