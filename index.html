@@ -3,43 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ValueIt Scanner</title>
+    <title>Hlamik Scanner</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { 
-            background-color: var(--tg-theme-bg-color, #ffffff); 
-            color: var(--tg-theme-text-color, #000000); 
-            font-family: sans-serif; 
-            text-align: center; 
-            padding: 20px; 
-            margin: 0; 
-        }
+        body { background-color: var(--tg-theme-bg-color, #ffffff); color: var(--tg-theme-text-color, #000000); font-family: sans-serif; text-align: center; padding: 20px; margin: 0; }
         h1 { font-size: 24px; margin-bottom: 5px; }
         p { color: var(--tg-theme-hint-color, #888888); margin-bottom: 30px; font-size: 14px; }
         input[type="file"] { display: none; }
-        .camera-btn { 
-            background-color: var(--tg-theme-button-color, #2481cc); 
-            color: var(--tg-theme-button-text-color, #ffffff); 
-            padding: 15px 20px; 
-            border-radius: 12px; 
-            font-size: 18px; 
-            font-weight: bold; 
-            display: inline-block; 
-            width: 80%; 
-            cursor: pointer; 
-        }
-        #imagePreview { 
-            margin-top: 30px; 
-            max-width: 100%; 
-            border-radius: 12px; 
-            display: none; 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-        }
+        .camera-btn { background-color: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #ffffff); padding: 15px 20px; border-radius: 12px; font-size: 18px; font-weight: bold; display: inline-block; width: 80%; cursor: pointer; }
+        #imagePreview { margin-top: 30px; max-width: 100%; border-radius: 12px; display: none; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
     </style>
 </head>
 <body>
 
-    <h1>ValueIt AI 🤖</h1>
+    <h1>Hlamik AI 🤖</h1>
     <p>Сделайте четкое фото устройства при хорошем освещении</p>
 
     <label class="camera-btn">
@@ -55,63 +32,77 @@
 
         const cameraInput = document.getElementById('cameraInput');
         const imagePreview = document.getElementById('imagePreview');
+        let compressedFile = null; // Здесь будем хранить сжатую фотку
 
-        // Когда юзер сделал фото
+        // МАГИЯ СЖАТИЯ ФОТОГРАФИИ
         cameraInput.addEventListener('change', function(e) {
             const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    imagePreview.src = e.target.result;
-                    imagePreview.style.display = 'block';
-                    tg.MainButton.text = "ОТПРАВИТЬ НА ОЦЕНКУ";
-                    tg.MainButton.color = "#31b545"; // Зеленый цвет
-                    tg.MainButton.show();
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const img = new Image();
+                img.onload = function() {
+                    // Создаем виртуальный холст
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 800; // Уменьшаем ширину до 800 пикселей (этого хватит для ИИ)
+                    const scaleSize = MAX_WIDTH / img.width;
+                    canvas.width = MAX_WIDTH;
+                    canvas.height = img.height * scaleSize;
+                    
+                    // Рисуем уменьшенную картинку
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    
+                    // Превращаем обратно в легкий файл (JPEG, качество 70%)
+                    canvas.toBlob((blob) => {
+                        compressedFile = blob; 
+                        imagePreview.src = URL.createObjectURL(blob);
+                        imagePreview.style.display = 'block';
+                        
+                        tg.MainButton.text = "ОТПРАВИТЬ НА ОЦЕНКУ";
+                        tg.MainButton.color = "#31b545";
+                        tg.MainButton.show();
+                    }, 'image/jpeg', 0.7);
                 }
-                reader.readAsDataURL(file);
+                img.src = event.target.result;
             }
+            reader.readAsDataURL(file);
         });
 
-        // БОЕВАЯ ЛОГИКА ОТПРАВКИ ФОТО НА СЕРВЕР
+        // ОТПРАВКА НА СЕРВЕР
         tg.MainButton.onClick(async function() {
-            const file = cameraInput.files[0];
             const user = tg.initDataUnsafe?.user; 
             
-            if (!file) {
-                tg.showAlert("Сделайте фото!");
+            // Проверяем, есть ли сжатый файл
+            if (!compressedFile) {
+                tg.showAlert("Пожалуйста, сделайте фото!");
                 return;
             }
 
-            // Меняем кнопку на загрузку
             tg.MainButton.text = "ОТПРАВЛЯЕМ... ⏳";
             tg.MainButton.showProgress();
 
             const formData = new FormData();
-            formData.append('file', file);
-            // Берем ID юзера из Телеграма. Если открыли в браузере - ставим заглушку 123456789
+            // Отправляем именно нашу легкую сжатую копию!
+            formData.append('file', compressedFile, 'photo.jpg');
             formData.append('user_id', user ? user.id : 123456789); 
 
             try {
+                // ВНИМАНИЕ: Здесь уже стоит твоя ссылка на Render!
                 const response = await fetch('https://hlamoteka.onrender.com/api/upload', {
                     method: 'POST',
-                    headers: {
-                        // Этот заголовок заставляет Ngrok пропустить запрос без экрана с кнопкой "Visit site"
-                        'ngrok-skip-browser-warning': 'true' 
-                    },
                     body: formData
                 });
                 
                 if (response.ok) {
-                    // Если всё супер - закрываем Web App!
                     tg.close(); 
                 } else {
-                    // Если сервер ответил, но с ошибкой
-                    tg.showAlert("Сервер ругается. Код ошибки: " + response.status);
+                    tg.showAlert("Сервер ругается. Код: " + response.status);
                     tg.MainButton.hideProgress();
                     tg.MainButton.text = "ОТПРАВИТЬ НА ОЦЕНКУ";
                 }
             } catch (err) {
-                // Если CORS заблокировал запрос или пропал интернет
                 tg.showAlert("Связь оборвалась: " + err.message);
                 tg.MainButton.hideProgress();
                 tg.MainButton.text = "ОТПРАВИТЬ НА ОЦЕНКУ";
@@ -119,5 +110,5 @@
         });
     </script>
 </body>
-
 </html>
+
