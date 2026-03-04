@@ -27,8 +27,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Ссылку на Web App теперь тоже берем из настроек. 
 # Заглушка стоит на случай, если ты еще не прописал её в .env
-WEB_APP_URL = os.getenv("WEB_APP_URL", "https://ТВОЙ_НИК.github.io/valueit-app/")
-
+WEB_APP_URL = "https://mgemgemge.github.io/hlamoteka/"
 # Инициализация
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
@@ -143,7 +142,7 @@ async def cmd_start(message: types.Message):
         web_app=WebAppInfo(url=WEB_APP_URL) 
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[web_app_btn]])
-    await message.answer("Привет! Я ИИ-оценщик ValueIt 🤖\nЖми кнопку ниже, чтобы открыть сканер.", reply_markup=keyboard)
+    await message.answer("Привет! Я ИИ-оценщик Hlamik 🤖\nЖми кнопку ниже, чтобы открыть сканер.", reply_markup=keyboard)
 
 @dp.message(Command("admin"))
 async def cmd_admin(message: types.Message):
@@ -193,4 +192,5 @@ async def on_startup():
 
 if __name__ == "__main__":
     print("🚀 Стартуем гибридный сервер (API + Bot) на порту 8000...")
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
