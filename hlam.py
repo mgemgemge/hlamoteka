@@ -197,8 +197,9 @@ async def on_startup():
     asyncio.create_task(dp.start_polling(bot))
 
 if __name__ == "__main__":
-    print("🚀 Стартуем гибридный сервер (API + Bot) на порту 8000...")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print("🚀 Стартуем сервер Хламика на порту 80...")
+    uvicorn.run(app, host="0.0.0.0", port=80)
+
 
 
 
