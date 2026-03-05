@@ -1,6 +1,6 @@
 meta:
   environment: python
-  toolchain: pip
+  toolchain: python
 build:
   requirementsPath: requirements.txt
 run:
