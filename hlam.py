@@ -2,6 +2,7 @@ import asyncio
 import os
 import io
 import json
+from typing import List
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, FSInputFile
@@ -48,23 +49,29 @@ async def read_index():
     except FileNotFoundError:
         return "API сервера работает! 🚀"
 
+# 🔄 ОБНОВЛЕННАЯ ФУНКЦИЯ (ПРИНИМАЕТ МАССИВ ФОТО)
 @app.post("/api/upload")
-async def upload_image(file: UploadFile = File(...), user_id: int = Form(...)):
-    msg = await bot.send_message(user_id, "🔍 Принял фото из сканера! Включаю нейронные сети...")
+async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(...)):
+    # Бот теперь пишет, сколько именно фото он получил
+    msg = await bot.send_message(user_id, f"🔍 Принял {len(files)} фото из сканера! Включаю нейронные сети...")
     
     try:
-        image_data = await file.read()
-        img = PIL.Image.open(io.BytesIO(image_data))
+        # Распаковываем все присланные файлы в картинки
+        images = []
+        for file in files:
+            image_data = await file.read()
+            img = PIL.Image.open(io.BytesIO(image_data))
+            images.append(img)
         
         prompt = """
-        Ты профессиональный оценщик техники в ломбарде. Проанализируй фото и верни строго JSON-объект.
+        Ты профессиональный оценщик техники в ломбарде. Проанализируй эти фотографии устройства с разных ракурсов и верни строго JSON-объект.
         Не пиши никакого лишнего текста, только валидный JSON.
         
         Формат ответа:
         {
             "is_gadget": true,
             "device_name": "Точный бренд и модель",
-            "condition": "Краткое описание состояния",
+            "condition": "Краткое описание состояния, учитывая все ракурсы",
             "condition_multiplier": 1.0,
             "estimated_market_price": 25000,
             "reason": "Почему такая оценка состояния и цены (1 предложение)"
@@ -73,7 +80,10 @@ async def upload_image(file: UploadFile = File(...), user_id: int = Form(...)):
         """
         
         await bot.edit_message_text("🧠 Сканирую каждый пиксель...", chat_id=user_id, message_id=msg.message_id)
-        response = await asyncio.to_thread(model.generate_content, [prompt, img])
+        
+        # Передаем ИИ список: промпт + все картинки разом
+        request_content = [prompt] + images
+        response = await asyncio.to_thread(model.generate_content, request_content)
         
         # Очистка JSON
         raw_text = response.text.strip()
@@ -190,6 +200,7 @@ async def on_startup():
 if __name__ == "__main__":
     print("🚀 Стартуем гибридный сервер (API + Bot) на порту 8000...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
