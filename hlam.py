@@ -28,8 +28,10 @@ WEB_APP_URL = "https://mgemgemge.github.io/hlamoteka/?v=2"
 # Инициализация
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-2.5-flash')
+openai_client = AsyncOpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url="https://api.vsegpt.ru/v1" # Замени на базовый URL твоего агрегатора, если это не VseGPT
+)
 
 app = FastAPI()
 
@@ -85,16 +87,25 @@ async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(
         
         await bot.edit_message_text("🧠 Сканирую каждый пиксель...", chat_id=user_id, message_id=msg.message_id)
         
-        request_content = [prompt] + images
-        response = await asyncio.to_thread(model.generate_content, request_content)
+# Готовим фото для OpenAI (кодируем в Base64)
+        messages_content = [{"type": "text", "text": prompt}]
         
-        # Очистка JSON
-        raw_text = response.text.strip()
-        if raw_text.startswith("```json"):
-            raw_text = raw_text[7:-3].strip()
-        elif raw_text.startswith("```"):
-            raw_text = raw_text[3:-3].strip()
+        for file in files:
+            file_bytes = await file.read()
+            base64_image = base64.b64encode(file_bytes).decode('utf-8')
+            messages_content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
+            })
             
+        # Отправляем запрос в OpenAI
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": messages_content}],
+            response_format={ "type": "json_object" } # Принудительно требуем идеальный JSON
+        )
+        
+        raw_text = response.choices[0].message.content
         ai_data = json.loads(raw_text)
         
         # 🛑 НОВАЯ ВСЕЯДНАЯ ЗАЩИТА ОТ ДУРАКА
@@ -260,6 +271,7 @@ async def on_startup():
 if __name__ == "__main__":
     print("🚀 Стартуем сервер Хламика на порту 80...")
     uvicorn.run(app, host="0.0.0.0", port=80)
+
 
 
 
