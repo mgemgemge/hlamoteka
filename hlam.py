@@ -22,7 +22,6 @@ load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
 WEB_APP_URL = "https://mgemgemge.github.io/hlamoteka/?v=2"
 
 # Инициализация
@@ -200,6 +199,7 @@ async def on_startup():
 if __name__ == "__main__":
     print("🚀 Стартуем гибридный сервер (API + Bot) на порту 8000...")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
