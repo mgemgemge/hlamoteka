@@ -6,7 +6,8 @@ from typing import List
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, FSInputFile, MenuButtonWebApp, ReplyKeyboardMarkup, KeyboardButton
-import google.generativeai as genai
+import base64
+from openai import AsyncOpenAI
 import PIL.Image
 
 from fastapi import FastAPI, UploadFile, File, Form
@@ -259,6 +260,7 @@ async def on_startup():
 if __name__ == "__main__":
     print("🚀 Стартуем сервер Хламика на порту 80...")
     uvicorn.run(app, host="0.0.0.0", port=80)
+
 
 
 
