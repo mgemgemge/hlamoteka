@@ -32,7 +32,7 @@ WEB_APP_URL = "https://hlamik-hlamik.amvera.io/"
 # 🚨 МАГИЯ ТУННЕЛЯ CLOUDFLARE 🚨
 # Замени ссылку ниже на ту, что выдал тебе Cloudflare!
 # ОБЯЗАТЕЛЬНО оставь на конце /v1beta/openai/
-CLOUDFLARE_URL = "https://ТВОЙ_ВОРКЕР.workers.dev/v1beta/openai/"
+CLOUDFLARE_URL = "https://hlamik.ike92.workers.dev/v1beta/openai/"
 
 openai_client = AsyncOpenAI(
     api_key=GEMINI_API_KEY,
@@ -238,6 +238,7 @@ async def on_startup():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=80)
+
 
 
 
