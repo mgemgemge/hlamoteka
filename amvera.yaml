@@ -1,7 +1,0 @@
-meta:
-  environment: python
-  toolchain: python
-build:
-  requirementsPath: requirements.txt
-run:
-  scriptName: hlam.py
