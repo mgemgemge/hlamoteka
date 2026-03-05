@@ -5,7 +5,7 @@ import sqlite3
 import base64
 from typing import List
 
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 import uvicorn
@@ -17,7 +17,8 @@ from aiogram.types import (
     InlineKeyboardButton, 
     WebAppInfo, 
     FSInputFile, 
-    MenuButtonWebApp
+    MenuButtonWebApp,
+    BufferedInputFile
 )
 
 from openai import AsyncOpenAI
@@ -30,8 +31,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 WEB_APP_URL = "https://hlamik-hlamik.amvera.io/"
 
 # 🚨 МАГИЯ ТУННЕЛЯ CLOUDFLARE 🚨
-# Замени ссылку ниже на ту, что выдал тебе Cloudflare!
-# ОБЯЗАТЕЛЬНО оставь на конце /v1beta/openai/
+# Убедись, что тут твоя ссылка на воркер!
 CLOUDFLARE_URL = "https://hlamik.ike92.workers.dev/v1beta/openai/"
 
 openai_client = AsyncOpenAI(
@@ -86,49 +86,49 @@ def save_item(user_id, device_name, condition, base_price):
     conn.close()
 
 # ==========================================
-# --- FASTAPI: РАЗДАЧА И ПРИЕМ ФОТО ---
+# --- ФОНОВАЯ ЗАДАЧА: РАБОТА ИИ ---
 # ==========================================
-@app.get("/")
-async def get_index():
-    return FileResponse("index.html")
-
-@app.post("/api/upload")
-async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(...)):
-    
-    msg = await bot.send_message(user_id, "🧠 Сканирую каждый пиксель через секретный туннель...")
+async def process_images_task(file_bytes_list: list, user_id: int):
+    # Отправляем сообщение, что процесс пошел (чтобы человек не скучал)
+    msg = await bot.send_message(
+        user_id, 
+        "👀 **Фотки получил!**\n\n🔍 Изучаю детали...\n📊 Анализирую рынок...\n⏳ Считаю денюжки...",
+        parse_mode="Markdown"
+    )
     
     prompt = """
-    Ты профессиональный оценщик любых вещей для барахолки (Авито, Юла, Ebay). Проанализируй эти фотографии.
+    Ты профессиональный оценщик любых вещей для барахолки. Проанализируй эти фотографии.
     
-    🛑 ПРАВИЛО 1: В кадре должна быть СТРОГО ОДНА вещь (или один логичный комплект). Если видишь сборную солянку разных предметов — ставь "is_valuable": false и пиши в "reason": "Эй, я не оцениваю оптом! 😅 Пожалуйста, оставь в кадре только одну вещь."
-    🛑 ПРАВИЛО 2: Вещь должна иметь ценность на вторичном рынке. Если на фото мусор, живые люди, животные или пустая комната — ставь "is_valuable": false и пиши смешную причину отказа.
+    🛑 ПРАВИЛО 1: В кадре должна быть СТРОГО ОДНА вещь (или один логичный комплект). Если видишь сборную солянку — "is_valuable": false.
+    🛑 ПРАВИЛО 2: Вещь должна иметь ценность на вторичном рынке. Если мусор — "is_valuable": false.
     
-    Верни строго JSON-объект без лишнего текста (Markdown-разметку тоже не используй).
-    
-    Формат ответа:
+    Формат ответа (СТРОГО JSON):
     {
         "is_valuable": true,
-        "item_name": "Точное название предмета, бренд, модель (если есть)",
-        "condition": "Краткое описание состояния, учитывая все ракурсы",
-        "condition_multiplier": 1.0,
-        "estimated_market_price": 2500,
+        "item_name": "Точное название предмета, бренд, модель",
+        "condition": "Краткое описание состояния",
+        "market_price": 5000,
+        "quick_sell_price": 4000,
+        "instant_buyout_price": 3000,
         "reason": "Почему такая оценка (1-2 предложения)"
     }
-    Важно: estimated_market_price - это примерная рыночная цена Б/У вещи в рублях (целое число).
+    Важно: 
+    - market_price: средняя рыночная цена Б/У вещи.
+    - quick_sell_price: цена для быстрой продажи (около 80-85% от рынка).
+    - instant_buyout_price: цена для мгновенного выкупа нами (около 60-70% от рынка).
+    Все цены - целые числа в рублях.
     """
 
     try:
         messages_content = [{"type": "text", "text": prompt}]
         
-        for file in files:
-            file_bytes = await file.read()
+        for file_bytes in file_bytes_list:
             base64_image = base64.b64encode(file_bytes).decode('utf-8')
             messages_content.append({
                 "type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
             })
             
-        # Стучимся в Google Gemini через формат OpenAI!
         response = await openai_client.chat.completions.create(
             model="gemini-2.5-flash",
             messages=[{"role": "user", "content": messages_content}],
@@ -141,21 +141,27 @@ async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(
         if not ai_data.get("is_valuable"):
             funny_text = f"❌ **Оценка прервана!**\n\nИИ говорит: *{ai_data.get('reason')}*"
             await bot.edit_message_text(funny_text, chat_id=user_id, message_id=msg.message_id, parse_mode="Markdown")
-            return {"status": "not_valuable"}
+            return
 
         device_name = ai_data.get("item_name", "Неизвестная вещь")
         condition = ai_data.get("condition", "Не определено")
-        base_price = int(ai_data.get("estimated_market_price", 0))
         reason = ai_data.get("reason", "")
         
-        save_item(user_id, device_name, condition, base_price)
+        # Забираем наши 3 цены
+        p_market = int(ai_data.get("market_price", 0))
+        p_quick = int(ai_data.get("quick_sell_price", 0))
+        p_buyout = int(ai_data.get("instant_buyout_price", 0))
+        
+        save_item(user_id, device_name, condition, p_market)
 
         final_text = (
             f"📦 **Находка:** {device_name}\n"
             f"🔎 **Состояние:** {condition}\n"
             f"💡 **Вердикт:** {reason}\n\n"
-            f"💰 **Рыночная цена:** ~{base_price} ₽\n\n"
-            f"Хочешь продать эту вещь прямо сейчас без лишних хлопот?"
+            f"📈 **Рыночная цена:** ~{p_market} ₽\n"
+            f"⚡ **Быстрая продажа:** ~{p_quick} ₽\n"
+            f"💸 **Мгновенный выкуп:** ~{p_buyout} ₽\n\n"
+            f"Как поступим?"
         )
         
         inline_kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -163,14 +169,43 @@ async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(
             [InlineKeyboardButton(text="📢 Выставить на Авито/Юлу (AI)", callback_data="action_publish")]
         ])
         
-        await bot.edit_message_text(final_text, chat_id=user_id, message_id=msg.message_id, reply_markup=inline_kb, parse_mode="Markdown")
-        return {"status": "ok"}
+        # Готовим первую фотку для отправки
+        photo = BufferedInputFile(file_bytes_list[0], filename="item.jpg")
+        
+        # Удаляем сообщение "Фотки получил..." и присылаем красивый результат с картинкой!
+        await bot.delete_message(chat_id=user_id, message_id=msg.message_id)
+        await bot.send_photo(
+            chat_id=user_id, 
+            photo=photo, 
+            caption=final_text, 
+            reply_markup=inline_kb, 
+            parse_mode="Markdown"
+        )
 
     except Exception as e:
         error_msg = f"❌ Ошибка ИИ: {e}"
         print(error_msg) 
         await bot.edit_message_text(error_msg, chat_id=user_id, message_id=msg.message_id)
-        return {"status": "error"}
+
+# ==========================================
+# --- FASTAPI: РАЗДАЧА И ПРИЕМ ФОТО ---
+# ==========================================
+@app.get("/")
+async def get_index():
+    return FileResponse("index.html")
+
+@app.post("/api/upload")
+async def upload_image(background_tasks: BackgroundTasks, files: List[UploadFile] = File(...), user_id: int = Form(...)):
+    # Читаем картинки в память СРАЗУ
+    file_bytes_list = []
+    for file in files:
+        file_bytes_list.append(await file.read())
+        
+    # Запускаем ИИ думать в ФОНОВОМ РЕЖИМЕ
+    background_tasks.add_task(process_images_task, file_bytes_list, user_id)
+    
+    # МГНОВЕННО отвечаем сканеру, чтобы он закрылся без зависаний!
+    return {"status": "ok"}
 
 # ==========================================
 # --- ТЕЛЕГРАМ БОТ: ЛОГИКА ---
@@ -185,13 +220,12 @@ async def cmd_start(message: types.Message):
     
     welcome_text = (
         "👋 **Привет! Я Hlamik — твой карманный ИИ-оценщик.**\n\n"
-        "Помогаю превратить вещи, которые лежат без дела, в реальные деньги. Я знаю цены на вторичном рынке почти на всё: от смартфонов и ноутбуков до кроссовок и гитар!\n\n"
+        "Помогаю превратить вещи, которые лежат без дела, в реальные деньги.\n\n"
         "**⚙️ Как это работает:**\n"
         "1️⃣ Нажми кнопку **Запустить сканер**.\n"
         "2️⃣ Помести предмет в центр рамки и сделай от 1 до 5 фото со всех сторон.\n"
         "3️⃣ Мои нейросети проанализируют состояние вещи и выдадут её рыночную цену.\n"
         "4️⃣ Если цена устроит — жми «Продать сейчас», и мы организуем выкуп!\n\n"
-        "💡 *Совет: фотографируй при хорошем освещении и клади в кадр строго одну вещь.*\n\n"
         "Ну что, проверим, сколько стоит твой хлам? Жми на кнопку! 👇"
     )
     
