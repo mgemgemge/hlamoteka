@@ -8,34 +8,33 @@
     <style>
         body { background-color: var(--tg-theme-bg-color, #ffffff); color: var(--tg-theme-text-color, #000000); font-family: sans-serif; text-align: center; padding: 20px; margin: 0; }
         h1 { font-size: 24px; margin-bottom: 5px; }
-        p { color: var(--tg-theme-hint-color, #888888); margin-bottom: 20px; font-size: 14px; }
+        p { color: var(--tg-theme-hint-color, #888888); margin-bottom: 20px; font-size: 14px; transition: color 0.3s; }
         
-        /* Стили для новых кнопок */
         .btn-container { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }
-        .action-btn { background-color: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #ffffff); padding: 12px 15px; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; flex: 1; border: none; }
-        .action-btn.disabled { opacity: 0.5; pointer-events: none; }
+        .action-btn { background-color: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #ffffff); padding: 12px 15px; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; flex: 1; border: none; transition: 0.2s; }
+        .action-btn.disabled { opacity: 0.5; pointer-events: none; background-color: gray; }
         input[type="file"] { display: none; }
         
-        /* Стили для галереи фото */
         .counter { font-size: 14px; font-weight: bold; margin-bottom: 10px; }
         .preview-grid { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 20px; }
-        .preview-grid img { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .preview-grid img { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); transition: transform 0.2s; }
+        .preview-grid img:hover { transform: scale(1.05); }
     </style>
 </head>
 <body>
 
     <h1>Hlamik AI 🤖</h1>
-    <p>Добавьте от 1 до 5 фото со всех сторон</p>
+    <p id="mainHint">Добавьте от 1 до 5 фото со всех сторон</p>
 
     <div class="counter" id="photoCounter">Фото: 0 / 5</div>
 
     <div class="btn-container">
         <label class="action-btn" id="btnCamera">
-            📸 Камера
+            <span id="textCamera">📸 Камера</span>
             <input type="file" id="inputCamera" accept="image/*" capture="environment">
         </label>
         <label class="action-btn" id="btnGallery">
-            🖼 Галерея
+            <span id="textGallery">🖼 Галерея</span>
             <input type="file" id="inputGallery" accept="image/*" multiple>
         </label>
     </div>
@@ -52,29 +51,38 @@
         const photoCounter = document.getElementById('photoCounter');
         const btnCamera = document.getElementById('btnCamera');
         const btnGallery = document.getElementById('btnGallery');
+        const textCamera = document.getElementById('textCamera');
+        const textGallery = document.getElementById('textGallery');
+        const mainHint = document.getElementById('mainHint');
         
-        let compressedFiles = []; // Массив для хранения сжатых фото
+        let compressedFiles = [];
         const MAX_PHOTOS = 5;
 
-        // Обновление интерфейса
         function updateUI() {
             photoCounter.innerText = `Фото: ${compressedFiles.length} / ${MAX_PHOTOS}`;
             
-            // Если достигли лимита - отключаем кнопки
-            if (compressedFiles.length >= MAX_PHOTOS) {
-                btnCamera.classList.add('disabled');
-                btnGallery.classList.add('disabled');
-            }
-            
-            // Показываем кнопку отправки, если есть хотя бы 1 фото
             if (compressedFiles.length > 0) {
                 tg.MainButton.text = "ОТПРАВИТЬ НА ОЦЕНКУ";
                 tg.MainButton.color = "#31b545";
                 tg.MainButton.show();
+
+                // UX Магия: меняем тексты после первого фото
+                if (compressedFiles.length < MAX_PHOTOS) {
+                    textCamera.innerText = "➕ Еще фото";
+                    textGallery.innerText = "➕ Из галереи";
+                    mainHint.innerText = "Отлично! Можете добавить еще ракурсы или отправить.";
+                    mainHint.style.color = "#31b545"; // Делаем текст зеленым
+                } else {
+                    mainHint.innerText = "Максимум фото загружен! Жмите 'Отправить'.";
+                    mainHint.style.color = "#d32f2f"; // Делаем текст красным
+                    btnCamera.classList.add('disabled');
+                    btnGallery.classList.add('disabled');
+                    textCamera.innerText = "MAX";
+                    textGallery.innerText = "MAX";
+                }
             }
         }
 
-        // Магия сжатия для каждого файла
         function processFile(file) {
             if (compressedFiles.length >= MAX_PHOTOS) return;
             
@@ -98,7 +106,6 @@
                         if (compressedFiles.length < MAX_PHOTOS) {
                             compressedFiles.push(blob);
                             
-                            // Добавляем превьюшку на экран
                             const imgPreview = document.createElement('img');
                             imgPreview.src = URL.createObjectURL(blob);
                             previewGrid.appendChild(imgPreview);
@@ -112,21 +119,18 @@
             reader.readAsDataURL(file);
         }
 
-        // Слушаем камеру (обычно 1 фото)
         inputCamera.addEventListener('change', (e) => {
             if (e.target.files.length > 0) processFile(e.target.files[0]);
-            e.target.value = ''; // сброс инпута
+            e.target.value = ''; 
         });
 
-        // Слушаем галерею (можно выбрать сразу несколько)
         inputGallery.addEventListener('change', (e) => {
             for(let i = 0; i < e.target.files.length; i++) {
                 processFile(e.target.files[i]);
             }
-            e.target.value = ''; // сброс инпута
+            e.target.value = ''; 
         });
 
-        // ОТПРАВКА НА СЕРВЕР
         tg.MainButton.onClick(async function() {
             const user = tg.initDataUnsafe?.user; 
             if (compressedFiles.length === 0) return;
@@ -136,14 +140,14 @@
 
             const formData = new FormData();
             
-            // Упаковываем ВСЕ фотографии в один пакет с именем 'files'
             compressedFiles.forEach((file, index) => {
                 formData.append('files', file, `photo_${index}.jpg`);
             });
             formData.append('user_id', user ? user.id : 123456789); 
 
             try {
-                const response = await fetch('https://hlamik-hlamik.amvera.io/api/upload', {
+                // 🚨 ВАЖНО: ЗАМЕНИ ЭТУ ССЫЛКУ НА СВОЙ ДОМЕН AMVERA!
+                const response = await fetch('https://ТВОЙ_ПРОЕКТ.amvera.io/api/upload', {
                     method: 'POST',
                     body: formData
                 });
