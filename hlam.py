@@ -2,6 +2,7 @@ import asyncio
 import os
 import random
 import io
+import json
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, FSInputFile
@@ -92,22 +93,70 @@ async def upload_image(file: UploadFile = File(...), user_id: int = Form(...)):
         image_data = await file.read()
         img = PIL.Image.open(io.BytesIO(image_data))
         
-        prompt = (
-            "Ты профессиональный оценщик. Посмотри на фото и назови ТОЛЬКО "
-            "бренд и точную модель устройства на первой строке. "
-            "На второй строке кратко опиши его состояние. Больше никакого текста."
-        )
+        # --- НОВЫЙ PRO-ПРОМПТ ДЛЯ ИИ ---
+        prompt = """
+        Ты профессиональный оценщик техники в ломбарде. Проанализируй фото и верни строго JSON-объект.
+        Не пиши никакого лишнего текста, только валидный JSON.
         
-        await bot.edit_message_text("🧠 Распознаю устройство...", chat_id=user_id, message_id=msg.message_id)
+        Формат ответа:
+        {
+            "is_gadget": true/false (true если это техника/электроника, false если это кот, еда, человек, мебель и т.д.),
+            "device_name": "Точный бренд и модель (если is_gadget=true, иначе пусто)",
+            "condition": "Краткое описание состояния (царапины, разбит экран, идеальное и т.д.)",
+            "condition_multiplier": 1.0 (число: 0.5 если разбит/сломан, 0.8 если есть царапины, 1.0 норма, 1.2 если идеальное или видно коробку),
+            "reason": "Одно предложение: почему ты так оценил состояние и предмет"
+        }
+        """
+        
+        await bot.edit_message_text("🧠 Сканирую каждый пиксель...", chat_id=user_id, message_id=msg.message_id)
         response = await asyncio.to_thread(model.generate_content, [prompt, img])
         
-        lines = response.text.strip().split('\n')
-        device_name = lines[0].strip()
-        condition = lines[1].strip() if len(lines) > 1 else "Состояние не определено"
+        # Очищаем ответ ИИ от лишнего мусора (иногда он добавляет символы ```json)
+        raw_text = response.text.strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:-3].strip()
+        elif raw_text.startswith("```"):
+            raw_text = raw_text[3:-3].strip()
+            
+        # Превращаем текст в удобный словарь Python
+        ai_data = json.loads(raw_text)
+        
+        # 🛑 ЗАЩИТА ОТ ДУРАКА: Проверяем, техника ли это вообще
+        if not ai_data.get("is_gadget"):
+            funny_text = f"😅 Эй, бро! Кажется, это не техника.\n\nИИ говорит: *{ai_data.get('reason')}*\n\nЯ оцениваю только гаджеты. Давай сфоткаем телефон или ноут!"
+            await bot.edit_message_text(funny_text, chat_id=user_id, message_id=msg.message_id, parse_mode="Markdown")
+            return {"status": "not_a_gadget"}
+
+        # Если это техника, достаем данные
+        device_name = ai_data["device_name"]
+        condition = ai_data["condition"]
+        multiplier = ai_data["condition_multiplier"]
+        reason = ai_data["reason"]
+        
+        await bot.edit_message_text(f"📊 Анализирую цены на {device_name}...", chat_id=user_id, message_id=msg.message_id)
+        
+        # --- КОНЕЦ НОВОГО БЛОКА ---
         
         await bot.edit_message_text(f"📊 Ищу цены на {device_name}...", chat_id=user_id, message_id=msg.message_id)
         scraped_prices = mock_scraper(device_name)
+        scraped_prices = mock_scraper(device_name)
         price_data = calculate_prices(device_name, scraped_prices)
+        
+        if isinstance(price_data, dict):
+            # Применяем коэффициент к ценам
+            market_price = int(price_data['market'] * multiplier)
+            quick_price = int(price_data['quick'] * multiplier)
+            instant_price = int(price_data['instant'] * multiplier)
+            
+            add_evaluation(user_id, device_name, market_price)
+            final_text = (
+                f"📱 **Опознано:** {device_name}\n"
+                f"🔎 **Состояние:** {condition}\n"
+                f"💡 **Вердикт ИИ:** {reason}\n\n"
+                f"💰 **Рыночная цена:** {market_price} ₽\n"
+                f"⚡ **Быстрая продажа:** {quick_price} ₽\n"
+                f"🤝 **Мгновенный выкуп:** {instant_price} ₽"
+            )
         
         if isinstance(price_data, dict):
             add_evaluation(user_id, device_name, price_data['market'])
@@ -194,4 +243,5 @@ if __name__ == "__main__":
     print("🚀 Стартуем гибридный сервер (API + Bot) на порту 8000...")
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
