@@ -15,8 +15,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from dotenv import load_dotenv
 
-# Наши локальные модули
-from price_engine import calculate_prices
 from database import init_db, add_evaluation
 
 # Загружаем переменные окружения из файла .env (наш сейф)
@@ -47,34 +45,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def mock_scraper(device_name):
-    """Полная версия умного симулятора парсера."""
-    test_database = {
-        "samsung galaxy s8": 5000,
-        "iphone 11": 13000,
-        "playstation 5": 42000,
-        "airpods pro": 15000,
-        "macbook air m1": 65000
-    }
-    
-    base_price = None
-    device_lower = device_name.lower()
-    for key, price in test_database.items():
-        if key in device_lower:
-            base_price = price
-            break
-            
-    if not base_price:
-        base_price = random.randint(3000, 15000)
-    
-    mock_prices = [int(base_price * random.uniform(0.8, 1.2)) for _ in range(10)]
-    mock_prices.extend([1, 500, 999999])
-    return mock_prices
-
-# ==========================================
-# --- 🌐 ЧАСТЬ 1: API ДЛЯ WEB APP (МОРДА) ---
-# ==========================================
-
 @app.get("/", response_class=HTMLResponse)
 async def read_index():
     """Отдает HTML, если мы тестируем локально."""
@@ -100,12 +70,14 @@ async def upload_image(file: UploadFile = File(...), user_id: int = Form(...)):
         
         Формат ответа:
         {
-            "is_gadget": true/false (true если это техника/электроника, false если это кот, еда, человек, мебель и т.д.),
-            "device_name": "Точный бренд и модель (если is_gadget=true, иначе пусто)",
-            "condition": "Краткое описание состояния (царапины, разбит экран, идеальное и т.д.)",
-            "condition_multiplier": 1.0 (число: 0.5 если разбит/сломан, 0.8 если есть царапины, 1.0 норма, 1.2 если идеальное или видно коробку),
-            "reason": "Одно предложение: почему ты так оценил состояние и предмет"
+            "is_gadget": true,
+            "device_name": "Точный бренд и модель",
+            "condition": "Краткое описание состояния",
+            "condition_multiplier": 1.0,
+            "estimated_market_price": 25000,
+            "reason": "Почему такая оценка состояния и цены (1 предложение)"
         }
+        Важно: estimated_market_price - это примерная рыночная цена Б/У устройства в рублях (целое число). Если это кот или еда, is_gadget=false.
         """
         
         await bot.edit_message_text("🧠 Сканирую каждый пиксель...", chat_id=user_id, message_id=msg.message_id)
@@ -138,9 +110,34 @@ async def upload_image(file: UploadFile = File(...), user_id: int = Form(...)):
         # --- КОНЕЦ НОВОГО БЛОКА ---
         
         await bot.edit_message_text(f"📊 Ищу цены на {device_name}...", chat_id=user_id, message_id=msg.message_id)
-        scraped_prices = mock_scraper(device_name)
-        scraped_prices = mock_scraper(device_name)
-        price_data = calculate_prices(device_name, scraped_prices)
+       # Если это техника, достаем данные
+        device_name = ai_data.get("device_name", "Неизвестное устройство")
+        condition = ai_data.get("condition", "Не определено")
+        multiplier = float(ai_data.get("condition_multiplier", 1.0))
+        base_price = int(ai_data.get("estimated_market_price", 0))
+        reason = ai_data.get("reason", "")
+        
+        await bot.edit_message_text(f"📊 Рассчитываю ликвидность {device_name}...", chat_id=user_id, message_id=msg.message_id)
+        
+        # 🧮 НОВАЯ УМНАЯ МАТЕМАТИКА ЦЕН
+        # Умножаем базовую цену ИИ на коэффициент состояния
+        market_price = int(base_price * multiplier)
+        
+        # Высчитываем цены для быстрой продажи (-15%) и скупки (-30%)
+        quick_price = int(market_price * 0.85)
+        instant_price = int(market_price * 0.70)
+        
+        # Записываем в базу
+        add_evaluation(user_id, device_name, market_price)
+        
+        final_text = (
+            f"📱 **Опознано:** {device_name}\n"
+            f"🔎 **Состояние:** {condition}\n"
+            f"💡 **Вердикт ИИ:** {reason}\n\n"
+            f"💰 **Рыночная цена:** {market_price} ₽\n"
+            f"⚡ **Быстрая продажа:** {quick_price} ₽\n"
+            f"🤝 **Мгновенный выкуп:** {instant_price} ₽"
+        )
         
         if isinstance(price_data, dict):
             # Применяем коэффициент к ценам
@@ -243,5 +240,6 @@ if __name__ == "__main__":
     print("🚀 Стартуем гибридный сервер (API + Bot) на порту 8000...")
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
