@@ -7,7 +7,7 @@ from typing import List
 
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse  # 👈 Добавили раздачу файлов
+from fastapi.responses import FileResponse
 import uvicorn
 
 from aiogram import Bot, Dispatcher, types
@@ -26,13 +26,17 @@ from openai import AsyncOpenAI
 # --- НАСТРОЙКИ СЕРВЕРА И КЛЮЧИ ---
 # ==========================================
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 WEB_APP_URL = "https://hlamik-hlamik.amvera.io/"
 
-# Инициализация OpenAI (через агрегатор)
+# 🚨 МАГИЯ ТУННЕЛЯ CLOUDFLARE 🚨
+# Замени ссылку ниже на ту, что выдал тебе Cloudflare!
+# ОБЯЗАТЕЛЬНО оставь на конце /v1beta/openai/
+CLOUDFLARE_URL = "https://ТВОЙ_ВОРКЕР.workers.dev/v1beta/openai/"
+
 openai_client = AsyncOpenAI(
-    api_key=OPENAI_API_KEY,
-    base_url="https://api.vsegpt.ru/v1" 
+    api_key=GEMINI_API_KEY,
+    base_url=CLOUDFLARE_URL 
 )
 
 bot = Bot(token=TELEGRAM_TOKEN)
@@ -48,7 +52,7 @@ app.add_middleware(
 )
 
 # ==========================================
-# --- БАЗА ДАННЫХ (Вечный диск Amvera) ---
+# --- БАЗА ДАННЫХ ---
 # ==========================================
 if os.path.exists("/data"):
     DB_NAME = "/data/valueit.db"
@@ -82,21 +86,16 @@ def save_item(user_id, device_name, condition, base_price):
     conn.close()
 
 # ==========================================
-# --- FASTAPI: РАЗДАЧА ИНТЕРФЕЙСА (МОРДЫ) ---
+# --- FASTAPI: РАЗДАЧА И ПРИЕМ ФОТО ---
 # ==========================================
-# 🚨 Вот этот блок я случайно стер в прошлый раз!
 @app.get("/")
 async def get_index():
-    # Отдаем сканер при открытии ссылки в Telegram
     return FileResponse("index.html")
 
-# ==========================================
-# --- FASTAPI: ПРИЕМ ФОТО С САЙТА (МОЗГ) ---
-# ==========================================
 @app.post("/api/upload")
 async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(...)):
     
-    msg = await bot.send_message(user_id, "🧠 Сканирую каждый пиксель...")
+    msg = await bot.send_message(user_id, "🧠 Сканирую каждый пиксель через секретный туннель...")
     
     prompt = """
     Ты профессиональный оценщик любых вещей для барахолки (Авито, Юла, Ebay). Проанализируй эти фотографии.
@@ -129,8 +128,9 @@ async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
             })
             
+        # Стучимся в Google Gemini через формат OpenAI!
         response = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gemini-2.5-flash",
             messages=[{"role": "user", "content": messages_content}],
             response_format={ "type": "json_object" }
         )
@@ -228,9 +228,6 @@ async def process_instant_button(callback_query: types.CallbackQuery):
         parse_mode="Markdown"
     )
 
-# ==========================================
-# --- ЗАПУСК ГИБРИДНОГО СЕРВЕРА ---
-# ==========================================
 @app.on_event("startup")
 async def on_startup():
     init_db()
@@ -240,8 +237,8 @@ async def on_startup():
     asyncio.create_task(dp.start_polling(bot))
 
 if __name__ == "__main__":
-    print("🚀 Стартуем гибридный сервер (API + Bot) на порту 80...")
     uvicorn.run(app, host="0.0.0.0", port=80)
+
 
 
 
