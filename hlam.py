@@ -147,17 +147,27 @@ async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    # Создаем большую "прилипающую" кнопку внизу экрана
-    reply_btn = KeyboardButton(
-        text="📷 Открыть сканер", 
-        web_app=WebAppInfo(url=WEB_APP_URL)
+    # Создаем аккуратную кнопку прямо под сообщением
+    web_app_btn = InlineKeyboardButton(
+        text="📷 Запустить сканер", 
+        web_app=WebAppInfo(url=WEB_APP_URL) 
     )
-    reply_keyboard = ReplyKeyboardMarkup(keyboard=[[reply_btn]], resize_keyboard=True)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[web_app_btn]])
     
-    await message.answer(
-        "Привет! Я ИИ-оценщик Hlamik 🤖\nЗапускай сканер большой кнопкой внизу или через кнопку меню слева от ввода текста!", 
-        reply_markup=reply_keyboard
+    # Сочный приветственный текст с инструкцией
+    welcome_text = (
+        "👋 **Привет! Я Хламик — твой карманный кент.**\n\n"
+        "Помогаю превратить вещи, которые лежат без дела, в реальные деньги. Я знаю цены на вторичном рынке почти на всё: от смартфонов и ноутбуков до кроссовок и гитар!\n\n"
+        "**⚙️ Как это работает:**\n"
+        "1️⃣ Нажми кнопку **Запустить сканер**.\n"
+        "2️⃣ Помести предмет в центр рамки и сделай от 1 до 5 фото со всех сторон.\n"
+        "3️⃣ Мы проанализируем состояние вещи и выдадим её рыночную цену.\n"
+        "4️⃣ Если цена устроит — жми «Продать сейчас», и мы организуем выкуп!\n\n"
+        "💡 *Совет: фотографируй при хорошем освещении и клади в кадр строго одну вещь.*\n\n"
+        "Ну что, проверим, сколько стоит твой хлам? Жми на кнопку! 👇"
     )
+    
+    await message.answer(welcome_text, reply_markup=keyboard, parse_mode="Markdown")
 
 @dp.message(Command("admin"))
 async def cmd_admin(message: types.Message):
@@ -249,6 +259,7 @@ async def on_startup():
 if __name__ == "__main__":
     print("🚀 Стартуем сервер Хламика на порту 80...")
     uvicorn.run(app, host="0.0.0.0", port=80)
+
 
 
 
