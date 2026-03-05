@@ -1,7 +1,13 @@
 import sqlite3
 import datetime
 
-DB_NAME = "valueit.db"
+import os
+
+# Если на сервере есть папка /data, сохраняем туда. Иначе — в текущую папку.
+if os.path.exists("/data"):
+    DB_NAME = "/data/valueit.db"
+else:
+    DB_NAME = "valueit.db"
 
 def init_db():
     """Создает базу и таблицу, если их еще нет"""
@@ -28,3 +34,4 @@ def add_evaluation(user_id, device_name, price):
                    (user_id, device_name, price, now))
     conn.commit()
     conn.close()
+
