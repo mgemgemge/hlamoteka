@@ -7,6 +7,7 @@ from typing import List
 
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse  # 👈 Добавили раздачу файлов
 import uvicorn
 
 from aiogram import Bot, Dispatcher, types
@@ -26,15 +27,14 @@ from openai import AsyncOpenAI
 # ==========================================
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-WEB_APP_URL = "https://hlamik-hlamik.amvera.io/" # Твой публичный домен
+WEB_APP_URL = "https://hlamik-hlamik.amvera.io/"
 
 # Инициализация OpenAI (через агрегатор)
 openai_client = AsyncOpenAI(
     api_key=OPENAI_API_KEY,
-    base_url="https://api.vsegpt.ru/v1" # Базовый URL агрегатора (VseGPT)
+    base_url="https://api.vsegpt.ru/v1" 
 )
 
-# Инициализация Телеграм-бота и FastAPI
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 app = FastAPI()
@@ -82,7 +82,16 @@ def save_item(user_id, device_name, condition, base_price):
     conn.close()
 
 # ==========================================
-# --- FASTAPI: ПРИЕМ ФОТО С САЙТА ---
+# --- FASTAPI: РАЗДАЧА ИНТЕРФЕЙСА (МОРДЫ) ---
+# ==========================================
+# 🚨 Вот этот блок я случайно стер в прошлый раз!
+@app.get("/")
+async def get_index():
+    # Отдаем сканер при открытии ссылки в Telegram
+    return FileResponse("index.html")
+
+# ==========================================
+# --- FASTAPI: ПРИЕМ ФОТО С САЙТА (МОЗГ) ---
 # ==========================================
 @app.post("/api/upload")
 async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(...)):
@@ -110,7 +119,6 @@ async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(
     """
 
     try:
-        # 1. Готовим фото для OpenAI (кодируем в Base64)
         messages_content = [{"type": "text", "text": prompt}]
         
         for file in files:
@@ -121,7 +129,6 @@ async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(
                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
             })
             
-        # 2. Делаем запрос к ИИ через агрегатор
         response = await openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": messages_content}],
@@ -131,22 +138,18 @@ async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(
         raw_text = response.choices[0].message.content
         ai_data = json.loads(raw_text)
         
-        # 3. Защита от мусора и оптовиков
         if not ai_data.get("is_valuable"):
             funny_text = f"❌ **Оценка прервана!**\n\nИИ говорит: *{ai_data.get('reason')}*"
             await bot.edit_message_text(funny_text, chat_id=user_id, message_id=msg.message_id, parse_mode="Markdown")
             return {"status": "not_valuable"}
 
-        # 4. Извлекаем данные успешной оценки
         device_name = ai_data.get("item_name", "Неизвестная вещь")
         condition = ai_data.get("condition", "Не определено")
         base_price = int(ai_data.get("estimated_market_price", 0))
         reason = ai_data.get("reason", "")
         
-        # Сохраняем в базу данных
         save_item(user_id, device_name, condition, base_price)
 
-        # 5. Формируем красивый ответ клиенту
         final_text = (
             f"📦 **Находка:** {device_name}\n"
             f"🔎 **Состояние:** {condition}\n"
@@ -224,7 +227,6 @@ async def process_instant_button(callback_query: types.CallbackQuery):
         "🤝 **Отлично! Мы зафиксировали цену мгновенного выкупа.**\n\n📍 Наш партнер-скупщик свяжется с вами в течение 15 минут.",
         parse_mode="Markdown"
     )
-    print(f"🚨 ВНИМАНИЕ! НОВЫЙ ЛИД: Пользователь {callback_query.from_user.id} готов продать вещь!")
 
 # ==========================================
 # --- ЗАПУСК ГИБРИДНОГО СЕРВЕРА ---
@@ -240,6 +242,7 @@ async def on_startup():
 if __name__ == "__main__":
     print("🚀 Стартуем гибридный сервер (API + Bot) на порту 80...")
     uvicorn.run(app, host="0.0.0.0", port=80)
+
 
 
 
