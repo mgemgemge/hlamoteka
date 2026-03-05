@@ -5,7 +5,7 @@ import json
 from typing import List
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, FSInputFile
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo, FSInputFile, MenuButtonWebApp, ReplyKeyboardMarkup, KeyboardButton
 import google.generativeai as genai
 import PIL.Image
 
@@ -147,12 +147,17 @@ async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    web_app_btn = InlineKeyboardButton(
-        text="📷 Запустить сканер Hlamik", 
-        web_app=WebAppInfo(url=WEB_APP_URL) 
+    # Создаем большую "прилипающую" кнопку внизу экрана
+    reply_btn = KeyboardButton(
+        text="📷 Открыть сканер", 
+        web_app=WebAppInfo(url=WEB_APP_URL)
     )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[web_app_btn]])
-    await message.answer("Привет! Я ИИ-оценщик Hlamik 🤖\nЖми кнопку ниже, чтобы открыть сканер.", reply_markup=keyboard)
+    reply_keyboard = ReplyKeyboardMarkup(keyboard=[[reply_btn]], resize_keyboard=True)
+    
+    await message.answer(
+        "Привет! Я ИИ-оценщик Hlamik 🤖\nЗапускай сканер большой кнопкой внизу или через кнопку меню слева от ввода текста!", 
+        reply_markup=reply_keyboard
+    )
 
 @dp.message(Command("admin"))
 async def cmd_admin(message: types.Message):
@@ -166,6 +171,48 @@ async def cmd_admin(message: types.Message):
         )
     except Exception as e:
         await message.answer(f"❌ Шеф, произошла ошибка при выгрузке: {e}")
+
+@dp.callback_query(lambda c: c.data == "action_publish")
+async def process_publish_button(callback_query: types.CallbackQuery):
+    await callback_query.answer()
+    await bot.send_message(
+        callback_query.from_user.id, 
+        "🚀 **Магия началась!**\nМы сгенерировали продающее описание и отправили черновик на Авито и Юлу. Ссылка появится здесь через пару минут.",
+        parse_mode="Markdown"
+    )
+
+@dp.callback_query(lambda c: c.data == "action_instant")
+async def process_instant_button(callback_query: types.CallbackQuery):
+    await callback_query.answer("💸 Сделка запущена!", show_alert=False)
+    await bot.send_message(
+        callback_query.from_user.id, 
+        "🤝 **Отлично! Мы зафиксировали цену мгновенного выкупа.**\n\n📍 Наш партнер-скупщик свяжется с вами в течение 15 минут.",
+        parse_mode="Markdown"
+    )
+    
+    print("\n" + "="*50)
+    print(f"🚨 ВНИМАНИЕ! НОВЫЙ ЛИД! 🚨")
+    print(f"Пользователь с ID {callback_query.from_user.id} готов продать вещь ПРЯМО СЕЙЧАС!")
+    print("="*50 + "\n")
+
+# ==========================================
+# --- 🚀 ЧАСТЬ 3: ЗАПУСК ГИБРИДНОГО СЕРВЕРА ---
+# ==========================================
+
+@app.on_event("startup")
+async def on_startup():
+    init_db()
+    
+    # МАГИЯ: Устанавливаем глобальную кнопку "Меню" слева от ввода текста
+    await bot.set_chat_menu_button(
+        menu_button=MenuButtonWebApp(text="📷 Сканер", web_app=WebAppInfo(url=WEB_APP_URL))
+    )
+    
+    asyncio.create_task(dp.start_polling(bot))
+
+if __name__ == "__main__":
+    print("🚀 Стартуем гибридный сервер (API + Bot) на порту 80...")
+    uvicorn.run(app, host="0.0.0.0", port=80)
 
 @dp.callback_query(lambda c: c.data == "action_publish")
 async def process_publish_button(callback_query: types.CallbackQuery):
@@ -202,6 +249,7 @@ async def on_startup():
 if __name__ == "__main__":
     print("🚀 Стартуем сервер Хламика на порту 80...")
     uvicorn.run(app, host="0.0.0.0", port=80)
+
 
 
 
