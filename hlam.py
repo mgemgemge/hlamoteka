@@ -63,28 +63,27 @@ async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(
             images.append(img)
         
         prompt = """
-        Ты строгий профессиональный оценщик техники в ломбарде. Проанализируй эти фотографии.
+        Ты профессиональный оценщик любых вещей для барахолки (Авито, Юла, Ebay). Проанализируй эти фотографии.
         
-        🛑 ПРАВИЛО 1: В кадре должно быть СТРОГО ОДНО устройство (оно может быть сфотографировано с разных ракурсов). Если ты видишь несколько РАЗНЫХ предметов вместе (например: мышка, часы и эспандер) — СРАЗУ ставь "is_gadget": false и в "reason" пиши: "Эй, я не оцениваю оптом! 😅 Пожалуйста, оставь в кадре только ОДНО устройство и сфотографируй его снова."
-        🛑 ПРАВИЛО 2: Если это вообще не техника (кот, еда, пустой стол) — тоже ставь "is_gadget": false.
+        🛑 ПРАВИЛО 1: В кадре должна быть СТРОГО ОДНА вещь (или один логичный комплект, например пара обуви). Если видишь сборную солянку разных предметов (мышка, часы и эспандер вместе) — ставь "is_valuable": false и пиши в "reason": "Эй, я не оцениваю оптом! 😅 Пожалуйста, оставь в кадре только одну вещь."
+        🛑 ПРАВИЛО 2: Вещь должна иметь хоть какую-то ценность на вторичном рынке. Если на фото мусор, живые люди, животные, еда или пустая комната — ставь "is_valuable": false и пиши смешную причину отказа.
         
-        Верни строго JSON-объект без лишнего текста (Markdown-разметку тоже не используй, просто чистый JSON).
+        Верни строго JSON-объект без лишнего текста (Markdown-разметку тоже не используй).
         
         Формат ответа:
         {
-            "is_gadget": true,
-            "device_name": "Точный бренд и модель",
+            "is_valuable": true,
+            "item_name": "Точное название предмета, бренд, модель (если есть)",
             "condition": "Краткое описание состояния, учитывая все ракурсы",
             "condition_multiplier": 1.0,
-            "estimated_market_price": 25000,
-            "reason": "Почему такая оценка (1 предложение)"
+            "estimated_market_price": 2500,
+            "reason": "Почему такая оценка (1-2 предложения)"
         }
-        Важно: estimated_market_price - это примерная рыночная цена Б/У устройства в рублях (целое число).
+        Важно: estimated_market_price - это примерная рыночная цена Б/У вещи в рублях (целое число).
         """
         
         await bot.edit_message_text("🧠 Сканирую каждый пиксель...", chat_id=user_id, message_id=msg.message_id)
         
-        # Передаем ИИ список: промпт + все картинки разом
         request_content = [prompt] + images
         response = await asyncio.to_thread(model.generate_content, request_content)
         
@@ -97,14 +96,14 @@ async def upload_image(files: List[UploadFile] = File(...), user_id: int = Form(
             
         ai_data = json.loads(raw_text)
         
-        # 🛑 ЗАЩИТА ОТ ДУРАКА
-        if not ai_data.get("is_gadget"):
-            funny_text = f"😅 Эй, бро! Кажется, это не техника.\n\nИИ говорит: *{ai_data.get('reason')}*\n\nЯ оцениваю только гаджеты. Давай сфоткаем телефон или ноут!"
+        # 🛑 НОВАЯ ВСЕЯДНАЯ ЗАЩИТА ОТ ДУРАКА
+        if not ai_data.get("is_valuable"):
+            funny_text = f"❌ **Оценка прервана!**\n\nИИ говорит: *{ai_data.get('reason')}*"
             await bot.edit_message_text(funny_text, chat_id=user_id, message_id=msg.message_id, parse_mode="Markdown")
-            return {"status": "not_a_gadget"}
+            return {"status": "not_valuable"}
 
         # ⚙️ ИЗВЛЕЧЕНИЕ ДАННЫХ
-        device_name = ai_data.get("device_name", "Неизвестное устройство")
+        device_name = ai_data.get("item_name", "Неизвестная вещь")
         condition = ai_data.get("condition", "Не определено")
         multiplier = float(ai_data.get("condition_multiplier", 1.0))
         base_price = int(ai_data.get("estimated_market_price", 0))
@@ -203,6 +202,7 @@ async def on_startup():
 if __name__ == "__main__":
     print("🚀 Стартуем сервер Хламика на порту 80...")
     uvicorn.run(app, host="0.0.0.0", port=80)
+
 
 
 
