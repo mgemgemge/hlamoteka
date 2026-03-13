@@ -2,103 +2,250 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hlamik Scanner</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hlamik Scanner PRO</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: var(--tg-theme-bg-color, #fff); color: var(--tg-theme-text-color, #000); }
-        .btn { background-color: var(--tg-theme-button-color, #3390ec); color: var(--tg-theme-button-text-color, #fff); border: none; padding: 15px 20px; border-radius: 8px; font-size: 16px; cursor: pointer; width: 100%; margin-top: 20px;}
-        .btn:disabled { background-color: #ccc; cursor: not-allowed; }
-        .file-upload { border: 2px dashed #ccc; padding: 30px; border-radius: 10px; margin-bottom: 20px; }
-        #preview { margin-top: 15px; font-size: 14px; color: #666; font-weight: bold;}
+        :root {
+            --bg: var(--tg-theme-bg-color, #ffffff);
+            --text: var(--tg-theme-text-color, #000000);
+            --btn-bg: var(--tg-theme-button-color, #3390ec);
+            --btn-text: var(--tg-theme-button-text-color, #ffffff);
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; padding: 15px; background-color: var(--bg); color: var(--text); margin: 0; overflow-x: hidden; }
+        h2 { margin-top: 10px; margin-bottom: 5px;}
+        p { color: #888; font-size: 14px; margin-bottom: 20px;}
+        
+        .btn { background-color: var(--btn-bg); color: var(--btn-text); border: none; padding: 16px; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; width: 100%; margin-bottom: 10px; display: block; box-sizing: border-box; }
+        .btn-outline { background-color: transparent; border: 2px solid var(--btn-bg); color: var(--text); }
+        .btn:disabled { background-color: #ccc; border-color: #ccc; color: #fff; cursor: not-allowed; }
+
+        /* Камера */
+        #camera-container { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; flex-direction: column; }
+        #video { width: 100%; height: 80%; object-fit: cover; }
+        .frame-overlay { position: absolute; top: 10%; left: 10%; width: 80%; height: 60%; border: 2px dashed rgba(255,255,255,0.7); border-radius: 16px; box-sizing: border-box; pointer-events: none; }
+        .camera-controls { height: 20%; display: flex; justify-content: space-around; align-items: center; background: #111; padding: 0 20px;}
+        .capture-btn { width: 70px; height: 70px; background: white; border-radius: 50%; border: 5px solid #888; cursor: pointer; }
+        .close-cam-btn { color: white; font-size: 16px; background: none; border: none; padding: 10px; }
+
+        /* Миниатюры */
+        #thumbnails-container { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 20px; }
+        .thumb-wrapper { position: relative; width: 70px; height: 70px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .thumb-wrapper img { width: 100%; height: 100%; object-fit: cover; }
+        .delete-btn { position: absolute; top: 2px; right: 2px; background: rgba(255,0,0,0.8); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; line-height: 20px; cursor: pointer; padding: 0; }
+
+        input[type="file"] { display: none; }
     </style>
 </head>
 <body>
-    <h2>Сканер гаджетов 📷</h2>
-    <p>Выбери до 5 фотографий (с разных ракурсов, дефекты крупным планом)</p>
+    <div id="main-screen">
+        <h2>Сканер гаджетов 📷</h2>
+        <p>Добавь фото со всех ракурсов (максимум 5 шт.)</p>
 
-    <div class="file-upload">
+        <div id="thumbnails-container"></div>
+
+        <button id="openCameraBtn" class="btn">📸 Сделать фото</button>
+        <button id="openGalleryBtn" class="btn btn-outline">🖼 Выбрать из галереи</button>
         <input type="file" id="fileInput" accept="image/*" multiple>
-    </div>
-    <div id="preview">Фото не выбраны</div>
 
-    <button id="uploadBtn" class="btn" disabled>Отправить на оценку</button>
+        <button id="uploadBtn" class="btn" style="margin-top: 30px; background-color: #31b545;" disabled>🚀 Отправить на оценку (0/5)</button>
+    </div>
+
+    <div id="camera-container">
+        <video id="video" autoplay playsinline></video>
+        <div class="frame-overlay"></div>
+        <div class="camera-controls">
+            <button class="close-cam-btn" id="closeCameraBtn">Отмена</button>
+            <button class="capture-btn" id="captureBtn"></button>
+            <div style="width: 50px;"></div> </div>
+        <canvas id="canvas" style="display:none;"></canvas>
+    </div>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        const fileInput = document.getElementById('fileInput');
+        let photos = []; // Массив для хранения сжатых Blob-файлов
+        const MAX_PHOTOS = 5;
+
+        // Элементы
+        const mainScreen = document.getElementById('main-screen');
+        const cameraContainer = document.getElementById('camera-container');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const thumbnailsContainer = document.getElementById('thumbnails-container');
         const uploadBtn = document.getElementById('uploadBtn');
-        const preview = document.getElementById('preview');
+        const fileInput = document.getElementById('fileInput');
 
-        // 🚨 ВСТАВЬ СЮДА ССЫЛКУ НА СВОЙ СЕРВЕР AMVERA 🚨
-        const SERVER_URL = "https://hlamik-hlamik.waw0.amvera.tech/api/upload";
+        // --- ЛОГИКА КАМЕРЫ ---
+        let stream = null;
 
-        // Обработка выбора файлов
-        fileInput.addEventListener('change', () => {
-            const fileCount = fileInput.files.length;
-            if (fileCount > 0) {
-                if (fileCount > 10) {
-                    preview.textContent = `🛑 Слишком много фото (${fileCount})! Максимум 10.`;
-                    preview.style.color = "red";
-                    uploadBtn.disabled = true;
-                } else {
-                    preview.textContent = `✅ Выбрано фото: ${fileCount}`;
-                    preview.style.color = "green";
-                    uploadBtn.disabled = false;
-                }
-            } else {
-                uploadBtn.disabled = true;
-                preview.textContent = "Фото не выбраны";
-                preview.style.color = "#666";
+        document.getElementById('openCameraBtn').addEventListener('click', async () => {
+            if (photos.length >= MAX_PHOTOS) return alert("Максимум 5 фото!");
+            try {
+                // Запрашиваем заднюю камеру
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                video.srcObject = stream;
+                mainScreen.style.display = 'none';
+                cameraContainer.style.display = 'flex';
+            } catch (err) {
+                alert("Нет доступа к камере. Попробуйте выбрать фото из галереи.");
             }
         });
 
-        // Отправка на сервер
-        uploadBtn.addEventListener('click', async () => {
-            const files = fileInput.files;
-            if (files.length === 0) return;
+        document.getElementById('closeCameraBtn').addEventListener('click', closeCamera);
 
-            const userId = tg.initDataUnsafe?.user?.id;
-            if (!userId) {
-                alert("Ошибка: не удалось получить ID пользователя Телеграм. Открой Web App внутри бота.");
+        function closeCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            cameraContainer.style.display = 'none';
+            mainScreen.style.display = 'block';
+            updateUI();
+        }
+
+        document.getElementById('captureBtn').addEventListener('click', () => {
+            if (photos.length >= MAX_PHOTOS) {
+                alert("Достигнут лимит в 5 фото!");
+                closeCamera();
                 return;
             }
+            // Эффект затвора
+            video.style.opacity = 0.3;
+            setTimeout(() => video.style.opacity = 1, 100);
+
+            // Отрисовка видео на скрытый canvas
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Сжатие и добавление
+            compressAndAddCanvas();
+        });
+
+        // --- ЛОГИКА ГАЛЕРЕИ ---
+        document.getElementById('openGalleryBtn').addEventListener('click', () => {
+            if (photos.length >= MAX_PHOTOS) return alert("Максимум 5 фото!");
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            const slotsLeft = MAX_PHOTOS - photos.length;
+            const filesToProcess = files.slice(0, slotsLeft);
+            
+            if (files.length > slotsLeft) alert(`Добавлено только ${slotsLeft} фото (лимит 5).`);
+            
+            filesToProcess.forEach(file => {
+                const img = new Image();
+                img.src = URL.createObjectURL(file);
+                img.onload = () => {
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    compressAndAddCanvas();
+                }
+            });
+            fileInput.value = ""; // Сбрасываем input
+        });
+
+        // --- СЖАТИЕ (ОСНОВНОЙ ДВИЖОК) ---
+        function compressAndAddCanvas() {
+            const MAX_SIZE = 1080;
+            let width = canvas.width;
+            let height = canvas.height;
+
+            if (width > height && width > MAX_SIZE) {
+                height *= MAX_SIZE / width;
+                width = MAX_SIZE;
+            } else if (height > MAX_SIZE) {
+                width *= MAX_SIZE / height;
+                height = MAX_SIZE;
+            }
+
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = width;
+            tempCanvas.height = height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, width, height);
+
+            // Конвертируем в JPEG с качеством 80%
+            tempCanvas.toBlob((blob) => {
+                photos.push(blob);
+                updateUI();
+            }, 'image/jpeg', 0.8);
+        }
+
+        // --- ИНТЕРФЕЙС И ОТПРАВКА ---
+        function updateUI() {
+            thumbnailsContainer.innerHTML = '';
+            photos.forEach((blob, index) => {
+                const div = document.createElement('div');
+                div.className = 'thumb-wrapper';
+                
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(blob);
+                
+                const btn = document.createElement('button');
+                btn.className = 'delete-btn';
+                btn.innerHTML = '✕';
+                btn.onclick = () => {
+                    photos.splice(index, 1);
+                    updateUI();
+                };
+
+                div.appendChild(img);
+                div.appendChild(btn);
+                thumbnailsContainer.appendChild(div);
+            });
+
+            uploadBtn.textContent = `🚀 Отправить на оценку (${photos.length}/5)`;
+            uploadBtn.disabled = photos.length === 0;
+
+            document.getElementById('openCameraBtn').disabled = photos.length >= MAX_PHOTOS;
+            document.getElementById('openGalleryBtn').disabled = photos.length >= MAX_PHOTOS;
+        }
+
+        // 🚨 ВСТАВЬ СЮДА СВОЮ ССЫЛКУ НА СЕРВЕР AMVERA 🚨
+        const SERVER_URL = "https://hlamik-hlamik.waw0.amvera.tech/api/upload";
+
+        uploadBtn.addEventListener('click', async () => {
+            if (photos.length === 0) return;
+
+            const userId = tg.initDataUnsafe?.user?.id;
+            if (!userId) return alert("Ошибка Телеграм ID.");
 
             const formData = new FormData();
-            
-            // 🚨 ПАКУЕМ ВСЕ ФАЙЛЫ В МАССИВ ДЛЯ FASTAPI 🚨
-            for (let i = 0; i < files.length; i++) {
-                formData.append('files', files[i]);
-            }
+            photos.forEach((blob, index) => {
+                formData.append('files', blob, `photo_${index}.jpg`);
+            });
             formData.append('user_id', userId);
 
             uploadBtn.disabled = true;
-            uploadBtn.textContent = "⏳ Отправка (может занять время)...";
+            uploadBtn.textContent = "⏳ Отправка сжатых фото...";
 
             try {
-                const response = await fetch(SERVER_URL, {
-                    method: 'POST',
-                    body: formData
-                });
-
+                const response = await fetch(SERVER_URL, { method: 'POST', body: formData });
                 if (response.ok) {
-                    tg.close(); // Закрываем окно после успеха
+                    tg.close();
                 } else {
-                    alert("Ошибка при отправке на сервер. Попробуй еще раз.");
+                    alert("Ошибка сервера. Попробуй еще раз.");
                     uploadBtn.disabled = false;
-                    uploadBtn.textContent = "Отправить на оценку";
+                    updateUI();
                 }
             } catch (error) {
-                alert("Ошибка сети: " + error.message);
+                alert("Ошибка сети.");
                 uploadBtn.disabled = false;
-                uploadBtn.textContent = "Отправить на оценку";
+                updateUI();
             }
         });
     </script>
 </body>
 </html>
+
 
 
 
