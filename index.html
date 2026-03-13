@@ -20,21 +20,36 @@
         .btn-outline { background-color: transparent; border: 2px solid var(--btn-bg); color: var(--text); }
         .btn:disabled { background-color: #ccc; border-color: #ccc; color: #fff; cursor: not-allowed; }
 
-        /* Камера */
-        #camera-container { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; flex-direction: column; }
-        #video { width: 100%; height: 80%; object-fit: cover; }
-        .frame-overlay { position: absolute; top: 10%; left: 10%; width: 80%; height: 60%; border: 2px dashed rgba(255,255,255,0.7); border-radius: 16px; box-sizing: border-box; pointer-events: none; }
-        .camera-controls { height: 20%; display: flex; justify-content: space-around; align-items: center; background: #111; padding: 0 20px;}
-        .capture-btn { width: 70px; height: 70px; background: white; border-radius: 50%; border: 5px solid #888; cursor: pointer; }
-        .close-cam-btn { color: white; font-size: 16px; background: none; border: none; padding: 10px; }
-
-        /* Миниатюры */
+        /* --- Монтажный стол (Главный экран) --- */
+        #main-screen { transition: opacity 0.3s ease; }
         #thumbnails-container { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 20px; }
         .thumb-wrapper { position: relative; width: 70px; height: 70px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .thumb-wrapper img { width: 100%; height: 100%; object-fit: cover; }
         .delete-btn { position: absolute; top: 2px; right: 2px; background: rgba(255,0,0,0.8); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; line-height: 20px; cursor: pointer; padding: 0; }
 
         input[type="file"] { display: none; }
+
+        /* --- Полноэкранная Камера --- */
+        #camera-container { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 100; flex-direction: column; }
+        #video { width: 100%; height: 80%; object-fit: cover; }
+        .frame-overlay { position: absolute; top: 10%; left: 10%; width: 80%; height: 60%; border: 2px dashed rgba(255,255,255,0.7); border-radius: 16px; box-sizing: border-box; pointer-events: none; }
+        
+        /* 🚨 НОВЫЙ ЭЛЕМЕНТ: Счетчик фоток наверху 🚨 */
+        #camCounter { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); color: white; padding: 6px 16px; border-radius: 20px; font-size: 16px; font-weight: bold; z-index: 105; backdrop-filter: blur(5px); transition: transform 0.2s;}
+
+        .camera-controls { height: 20%; display: flex; justify-content: space-around; align-items: center; background: #111; padding: 0 20px; position: relative;}
+        .capture-btn { width: 70px; height: 70px; background: white; border-radius: 50%; border: 5px solid #888; cursor: pointer; transition: transform 0.1s; }
+        .capture-btn:active { transform: scale(0.9); background: #eee; }
+        .close-cam-btn { color: white; font-size: 16px; background: none; border: none; padding: 10px; font-weight: bold; }
+        
+        /* Место-заглушка, чтобы кнопка камеры была по центру */
+        .ghost-block { width: 60px; height: 50px; } 
+
+        /* 🚨 АНИМАЦИЯ: Летающий кадр 🚨 */
+        .fly-animation {
+            position: absolute; z-index: 1000; border-radius: 16px; border: 3px solid white; object-fit: cover;
+            transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
     </style>
 </head>
 <body>
@@ -52,12 +67,14 @@
     </div>
 
     <div id="camera-container">
+        <div id="camCounter">Снято: 0 / 5</div>
         <video id="video" autoplay playsinline></video>
         <div class="frame-overlay"></div>
         <div class="camera-controls">
-            <button class="close-cam-btn" id="closeCameraBtn">Отмена</button>
+            <button class="close-cam-btn" id="closeCameraBtn">Готово</button>
             <button class="capture-btn" id="captureBtn"></button>
-            <div style="width: 50px;"></div> </div>
+            <div class="ghost-block"></div>
+        </div>
         <canvas id="canvas" style="display:none;"></canvas>
     </div>
 
@@ -65,10 +82,9 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
 
-        let photos = []; // Массив для хранения сжатых Blob-файлов
+        let photos = [];
         const MAX_PHOTOS = 5;
 
-        // Элементы
         const mainScreen = document.getElementById('main-screen');
         const cameraContainer = document.getElementById('camera-container');
         const video = document.getElementById('video');
@@ -76,16 +92,17 @@
         const thumbnailsContainer = document.getElementById('thumbnails-container');
         const uploadBtn = document.getElementById('uploadBtn');
         const fileInput = document.getElementById('fileInput');
+        const camCounter = document.getElementById('camCounter');
 
-        // --- ЛОГИКА КАМЕРЫ ---
         let stream = null;
 
+        // --- ЛОГИКА КАМЕРЫ ---
         document.getElementById('openCameraBtn').addEventListener('click', async () => {
             if (photos.length >= MAX_PHOTOS) return alert("Максимум 5 фото!");
             try {
-                // Запрашиваем заднюю камеру
                 stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
                 video.srcObject = stream;
+                updateCamCounter();
                 mainScreen.style.display = 'none';
                 cameraContainer.style.display = 'flex';
             } catch (err) {
@@ -107,23 +124,70 @@
 
         document.getElementById('captureBtn').addEventListener('click', () => {
             if (photos.length >= MAX_PHOTOS) {
-                alert("Достигнут лимит в 5 фото!");
-                closeCamera();
+                alert("Достигнут лимит в 5 фото! Нажми 'Готово'.");
                 return;
             }
-            // Эффект затвора
+            
+            // Вспышка экрана
             video.style.opacity = 0.3;
             setTimeout(() => video.style.opacity = 1, 100);
 
-            // Отрисовка видео на скрытый canvas
+            // Отрисовка на canvas
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             
-            // Сжатие и добавление
+            // Запуск красивой анимации полета кадра
+            playFlyAnimation();
+
+            // Сжатие и добавление в массив
             compressAndAddCanvas();
         });
+
+        // 🚨 ФУНКЦИЯ АНИМАЦИИ: Летающий кадр 🚨
+        function playFlyAnimation() {
+            const clone = document.createElement('canvas');
+            clone.width = canvas.width;
+            clone.height = canvas.height;
+            const cloneCtx = clone.getContext('2d');
+            cloneCtx.drawImage(canvas, 0, 0);
+            
+            clone.className = 'fly-animation';
+            // Ставим кадр ровно по центру (как наша рамочка)
+            clone.style.top = '10%'; 
+            clone.style.left = '10%';
+            clone.style.width = '80%';
+            clone.style.height = '60%';
+            
+            cameraContainer.appendChild(clone);
+            
+            // Эффект "пульсации" счетчика
+            camCounter.style.transform = 'translateX(-50%) scale(1.2)';
+            setTimeout(() => camCounter.style.transform = 'translateX(-50%) scale(1)', 200);
+
+            // Через миллисекунду отправляем кадр в полет вниз
+            requestAnimationFrame(() => {
+                clone.style.top = '90%'; // Улетает вниз
+                clone.style.left = '45%'; // Улетает в центр
+                clone.style.width = '10%'; // Сжимается
+                clone.style.height = '10%';
+                clone.style.opacity = '0'; // Растворяется
+                clone.style.borderRadius = '50%';
+            });
+            
+            // Удаляем клона после завершения полета
+            setTimeout(() => clone.remove(), 500);
+        }
+
+        function updateCamCounter() {
+            camCounter.innerText = `Снято: ${photos.length} / ${MAX_PHOTOS}`;
+            if (photos.length >= MAX_PHOTOS) {
+                camCounter.style.backgroundColor = 'rgba(255, 50, 50, 0.8)'; // Краснеет при лимите
+            } else {
+                camCounter.style.backgroundColor = 'rgba(0,0,0,0.6)';
+            }
+        }
 
         // --- ЛОГИКА ГАЛЕРЕИ ---
         document.getElementById('openGalleryBtn').addEventListener('click', () => {
@@ -149,10 +213,10 @@
                     compressAndAddCanvas();
                 }
             });
-            fileInput.value = ""; // Сбрасываем input
+            fileInput.value = ""; 
         });
 
-        // --- СЖАТИЕ (ОСНОВНОЙ ДВИЖОК) ---
+        // --- СЖАТИЕ (CANVAS) ---
         function compressAndAddCanvas() {
             const MAX_SIZE = 1080;
             let width = canvas.width;
@@ -172,10 +236,15 @@
             const tempCtx = tempCanvas.getContext('2d');
             tempCtx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, width, height);
 
-            // Конвертируем в JPEG с качеством 80%
             tempCanvas.toBlob((blob) => {
                 photos.push(blob);
                 updateUI();
+                updateCamCounter(); // Обновляем счетчик внутри камеры
+                
+                // Если наснимали 5 фоток, закрываем камеру автоматически
+                if (photos.length >= MAX_PHOTOS && stream) {
+                    setTimeout(closeCamera, 600); // Ждем пока закончится анимация
+                }
             }, 'image/jpeg', 0.8);
         }
 
@@ -245,6 +314,7 @@
     </script>
 </body>
 </html>
+
 
 
 
